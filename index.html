@@ -576,6 +576,33 @@ a.btn{text-decoration:none}
 .req{color:var(--bad)}
 textarea.inp{min-height:76px;resize:vertical}
 @media (max-width:1150px){.cad-grid{grid-template-columns:1fr}}
+
+.wa-grid{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:16px;align-items:start}
+.m .wa-grid{grid-template-columns:1fr}
+@media(max-width:900px){.wa-grid{grid-template-columns:1fr}}
+.wa-card{display:flex;flex-direction:column;gap:10px}
+.wa-conv{text-align:left;width:100%;cursor:pointer;font:inherit;color:inherit}
+.wa-conv:hover{border-color:var(--primary)}
+.wa-last{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.wa-cpf{font-size:15px}
+.wa-res{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.m .wa-res,.wa-sim .wa-res{grid-template-columns:repeat(2,minmax(0,1fr))}
+@media(max-width:700px){.wa-res{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.wa-res .btn{justify-content:center;padding:9px 8px;font-size:13.5px}
+.wa-obs{font-size:14px;padding:9px 12px}
+.wa-sim{display:flex;flex-direction:column;gap:10px;position:sticky;top:16px}
+.m .wa-sim{position:static}
+.wa-sim textarea{font-size:14px;padding:9px 12px;resize:vertical;min-width:0}
+.btn.sm{padding:6px 10px;font-size:12.5px}
+.wa-th{display:flex;flex-direction:column;gap:6px;background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:10px;max-height:420px;overflow:auto}
+.sheet .wa-th{max-height:52vh}
+.bub{max-width:85%;align-self:flex-start;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:7px 10px 16px;font-size:13.5px;position:relative;overflow-wrap:anywhere;line-height:1.35}
+.bub.me{align-self:flex-end;background:var(--ok-soft);border-color:transparent}
+.bub.bo{background:var(--info-soft);border-color:transparent}
+.wa-th.vend .bub.bo{background:var(--surface)}
+.bub small{display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:2px}
+.bub i{position:absolute;right:8px;bottom:3px;font-size:10.5px;font-style:normal;color:var(--muted)}
+.bub.sys{align-self:center;background:transparent;border:none;color:var(--muted);font-size:12px;padding:2px 6px;text-align:center}
 </style>
 
 <div class="shell" id="shell">
@@ -605,7 +632,7 @@ var BRL=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'});
 function f(v){return BRL.format(v)}
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 function clone(o){return JSON.parse(JSON.stringify(o))}
-var IC={
+var IC={chat:'<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-5A8 8 0 1 1 21 12z"/>',
 home:'<path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v10h14V10"/>',
 plus:'<path d="M12 5v14M5 12h14"/>',
 clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
@@ -745,7 +772,317 @@ function logA(role,txt,sid){LOG.unshift({t:'19/10 '+hora(),by:actor(role),role:r
 var RLBL={vendedor:'Vendedor',supervisor:'Supervisor',bo:'Back office',fin:'Diretor',gf:'Gerente financeiro'};
 function logLi(l){var who=l.role==='vendedor'||l.role==='supervisor'?av(seller(l.role==='vendedor'?2:3),32):'<span class="av" style="width:32px;height:32px;font-size:12px">'+ini(l.by)+'</span>';return '<div class="li">'+who+'<div class="tx"><b style="font-weight:600;white-space:normal">'+esc(l.by)+' <em class="mut" style="font-style:normal;font-weight:500">'+esc(l.txt)+'</em></b><span>'+esc(l.t)+' · '+RLBL[l.role]+'</span></div></div>'}
 /* ===== sincronização entre aparelhos ===== */
-function snapState(){return{sales:SALES,tts:TTS,adi:ADI,clients:CLIENTS,log:LOG,cfg:CFG,sellers:SELLERS,seq:[idSeq,osSeq,pedSeq,cliSeq],s:{imported:S.imported,approved:S.approved,approvedAt:S.approvedAt,snap:S.snap,manual:S.manual,notif:S.notif,fat:S.fat,rep:S.rep,payInst:S.payInst,instLock:S.instLock,gerImported:S.gerImported,contest:S.contest,contests:S.contests}}}
+
+/* ===== bot do WhatsApp: mesma lógica do Worker (bot/worker.js) ===== */
+var WB=(function(){
+const GRAPH = 'https://graph.facebook.com/v21.0';
+
+const TXT = {
+  menu:
+    'Olá! Sou o assistente da JLD (teste NexFlow). O que você precisa?\n\n' +
+    '1 - Consultar CPF\n2 - Enviar ficha\n3 - Status de uma venda\n4 - Campanha do dia\n' +
+    '5 - Planos e pagamento\n6 - Modelo da ficha\n7 - Falar com o back office\n\n' +
+    'Responda com o número ou escreva direto (ex.: "consulta 123.456.789-09").',
+  campanha:
+    'Campanha de hoje (exemplo): cada venda cadastrada hoje vale R$ 20 extra. Válida só para vendas cadastradas no dia.',
+  planos:
+    'Planos (exemplo): 500MB, 600MB, 700MB + 10GB, 800MB + 20GB e 1 Giga.\n' +
+    'Pagamento: boleto, cartão de crédito ou débito em conta.\n' +
+    'Se a consulta voltar "apenas cartão de crédito", a venda só pode ser no cartão.',
+  modelo:
+    'FICHA PADRÃO - para cadastro da venda\n\nVENDEDOR(a):\nSUPERVISOR:\nNOME:\nCPF:\nRG:\nNOME DA MÃE:\nDATA DE NASCIMENTO:\n' +
+    'E-MAIL:\nCONTATO:\nWHATSAPP:\nRUA:\nNÚMERO:\nCOMPLEMENTO:\nCEP:\nBAIRRO:\nCIDADE:\nPONTO DE REFERÊNCIA:\n' +
+    'PLANO:\nVALOR:\nVENCIMENTO:\nPAGAMENTO:\nBANCO:\nAGÊNCIA:\nCONTA:\nOBS:\n\n' +
+    'Copie, preencha e mande aqui de uma vez. Banco, agência e conta só se for débito em conta.',
+  humano: 'Certo, vou passar sua mensagem para o back office. Já te respondem por aqui.',
+  naoEntendi:
+    'Não entendi. Vou passar para o back office te responder. Se quiser o menu, mande "menu".',
+};
+
+// Campos da Ficha Padrão: chave, rótulos aceitos, obrigatório
+const CAMPOS = [
+  ['vendedor', ['vendedor', 'vendedora', 'vendedor(a)'], true],
+  ['supervisor', ['supervisor', 'supervisora'], false],
+  ['nome', ['nome', 'nome completo', 'cliente'], true],
+  ['cpf', ['cpf'], true],
+  ['rg', ['rg'], true],
+  ['mae', ['nome da mãe', 'nome da mae', 'mãe', 'mae'], true],
+  ['nascimento', ['data de nascimento', 'nascimento', 'dt nascimento'], true],
+  ['email', ['e-mail', 'email'], true],
+  ['contato', ['contato', 'telefone', 'número de telefone', 'numero de telefone', 'celular'], true],
+  ['whatsapp', ['whatsapp', 'whatsap', 'zap'], false],
+  ['rua', ['rua', 'logradouro', 'endereço', 'endereco'], true],
+  ['numero', ['número', 'numero', 'nº', 'n°'], true],
+  ['complemento', ['complemento'], false],
+  ['cep', ['cep'], true],
+  ['bairro', ['bairro'], true],
+  ['cidade', ['cidade'], true],
+  ['referencia', ['ponto de referência', 'ponto de referencia', 'referência', 'referencia'], false],
+  ['plano', ['plano'], true],
+  ['valor', ['valor'], false],
+  ['vencimento', ['vencimento'], true],
+  ['pagamento', ['pagamento', 'forma de pagamento'], true],
+  ['banco', ['banco'], false],
+  ['agencia', ['agência', 'agencia', 'ag'], false],
+  ['conta', ['conta', 'c/c', 'cc'], false],
+  ['obs', ['obs', 'observação', 'observacao'], false],
+];
+const NOME_CAMPO = {
+  vendedor: 'vendedor(a)', nome: 'nome do cliente', cpf: 'CPF', rg: 'RG', mae: 'nome da mãe',
+  nascimento: 'data de nascimento', email: 'e-mail', contato: 'contato', rua: 'rua', numero: 'número',
+  cep: 'CEP', bairro: 'bairro', cidade: 'cidade', plano: 'plano', vencimento: 'vencimento',
+  pagamento: 'forma de pagamento', banco: 'banco', agencia: 'agência', conta: 'conta',
+};
+
+const RESULTADOS = {
+  total: 'APROVADO TOTAL',
+  cartao: 'APROVADO APENAS PARA CARTÃO DE CRÉDITO',
+  reprovado: 'REPROVADO',
+  inviavel: 'SEM VIABILIDADE NO ENDEREÇO',
+};
+
+// ---------- utilidades ----------
+const dig = (s) => String(s || '').replace(/\D/g, '');
+function cpfValido(c) {
+  c = dig(c);
+  if (c.length !== 11 || /^(\d)\1{10}$/.test(c)) return false;
+  for (let t = 9; t < 11; t++) {
+    let s = 0;
+    for (let i = 0; i < t; i++) s += +c[i] * (t + 1 - i);
+    if (((s * 10) % 11) % 10 !== +c[t]) return false;
+  }
+  return true;
+}
+const fmtCpf = (c) => (c = dig(c)).replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+let OFF = 0;
+const agora = () => new Date(Date.now() - OFF).toISOString();
+function hora() {
+  return new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
+}
+function norm(s) {
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+}
+
+// ---------- estado (KV) ----------
+async function load(env) {
+  const raw = await env.DB.get('estado');
+  const s = raw ? JSON.parse(raw) : null;
+  return s || { seq: 1, conversas: {}, consultas: [], fichas: [] };
+}
+async function save(env, s) {
+  await env.DB.put('estado', JSON.stringify(s));
+}
+function conversa(s, num, nomePerfil) {
+  const c = (s.conversas[num] = s.conversas[num] || { num, nome: nomePerfil || num, msgs: [], humano: false, atendente: null });
+  if (nomePerfil) c.nome = nomePerfil;
+  return c;
+}
+function log(c, de, texto) {
+  c.msgs.push({ de, texto, t: agora() });
+  if (c.msgs.length > 200) c.msgs = c.msgs.slice(-200);
+}
+
+// ---------- WhatsApp ----------
+async function enviar(env, para, texto) {
+  const r = await fetch(`${GRAPH}/${env.PHONE_NUMBER_ID}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${env.WA_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messaging_product: 'whatsapp', to: para, type: 'text', text: { body: texto } }),
+  });
+  if (!r.ok) console.log('erro ao enviar', r.status, await r.text());
+  return r.ok;
+}
+
+// ---------- leitura da ficha ----------
+function ehFicha(texto) {
+  const t = norm(texto);
+  if (t.includes('ficha padrao')) return true;
+  const rotulos = (t.match(/^[\s\W]*[a-z][a-z \/()]{1,25}\s*:/gm) || []).length;
+  return rotulos >= 5 && t.includes('cpf');
+}
+function lerFicha(texto) {
+  const f = {};
+  for (const linha of String(texto).split('\n')) {
+    const m = linha.match(/^[\s\W]*([A-Za-zÀ-ú][A-Za-zÀ-ú \/()°º.\-]{0,30}?)\s*[:：]\s*(.*)$/);
+    if (!m) continue;
+    const rot = norm(m[1]).replace(/[.]/g, '');
+    const val = m[2].trim();
+    for (const [k, labels] of CAMPOS) {
+      if (f[k]) continue;
+      if (labels.some((l) => norm(l) === rot)) {
+        f[k] = val;
+        break;
+      }
+    }
+  }
+  return f;
+}
+function faltando(f) {
+  const out = [];
+  for (const [k, , obrig] of CAMPOS) if (obrig && !f[k]) out.push(NOME_CAMPO[k] || k);
+  if (/debito|débito/i.test(f.pagamento || '')) for (const k of ['banco', 'agencia', 'conta']) if (!f[k]) out.push(NOME_CAMPO[k]);
+  return out;
+}
+
+// ---------- regras do bot ----------
+function novaConsulta(s, num, cpf, origem) {
+  const ja = s.consultas.find((q) => q.cpf === cpf && q.status === 'pendente');
+  if (ja) return ja;
+  const q = { id: s.seq++, cpf, de: num, pedidaEm: agora(), status: 'pendente', resultado: null, obs: '', origem, atendente: null };
+  s.consultas.push(q);
+  return q;
+}
+function ultimaConsulta(s, cpf) {
+  return s.consultas.filter((q) => q.cpf === cpf).sort((a, b) => b.id - a.id)[0];
+}
+
+function responderMensagem(env, s, num, nomePerfil, texto) {
+  const c = conversa(s, num, nomePerfil);
+  log(c, 'vendedor', texto);
+  const respostas = [];
+  const t = norm(texto);
+
+  // conversa com uma pessoa do back office: o bot fica calado
+  if (c.humano) return respostas;
+
+  if (ehFicha(texto)) {
+    const f = lerFicha(texto);
+    const cpf = dig(f.cpf);
+    if (!cpf || !cpfValido(cpf)) {
+      respostas.push('Recebi a ficha, mas o CPF está faltando ou não é válido. Confira e mande de novo, por favor.');
+      return respostas;
+    }
+    const falta = faltando(f);
+    if (falta.length) {
+      respostas.push('Recebi a ficha de ' + (f.nome || 'cliente') + ', mas está faltando:\n- ' + falta.join('\n- ') + '\n\nMande a ficha de novo com esses dados completos.');
+      return respostas;
+    }
+    const cons = ultimaConsulta(s, cpf);
+    const ficha = { id: s.seq++, de: num, recebidaEm: agora(), dados: f, cpf, status: 'aguardando consulta' };
+    if (cons && cons.status === 'respondida') {
+      if (cons.resultado === 'reprovado' || cons.resultado === 'inviavel') {
+        respostas.push('Esse CPF (' + fmtCpf(cpf) + ') teve a consulta como "' + RESULTADOS[cons.resultado] + '". Não dá para seguir com a ficha.');
+        return respostas;
+      }
+      if (cons.resultado === 'cartao' && !/cart/i.test(f.pagamento || '')) {
+        respostas.push('Esse CPF foi aprovado apenas para cartão de crédito. Ajuste a forma de pagamento para cartão e mande a ficha de novo.');
+        return respostas;
+      }
+      ficha.status = 'pronta para cadastro';
+      s.fichas.push(ficha);
+      respostas.push('Ficha de ' + f.nome + ' recebida. Protocolo #' + ficha.id + '.\nJá está com o back office para o cadastro. Te aviso por aqui do andamento.');
+      return respostas;
+    }
+    s.fichas.push(ficha);
+    const q = cons && cons.status === 'pendente' ? cons : novaConsulta(s, num, cpf, 'ficha');
+    ficha.consultaId = q.id;
+    respostas.push('Obrigado pelo envio da ficha de ' + f.nome + ' (protocolo #' + ficha.id + ').\nNeste momento, estamos validando o CPF do cliente informado. Assim que a consulta sair, te aviso por aqui e a ficha segue para o cadastro.');
+    return respostas;
+  }
+
+  const cpfs = [...new Set((texto.match(/\d{3}\.?\d{3}\.?\d{3}-?\d{2}/g) || []).map(dig))];
+
+  if (/^(status|situacao)/.test(t) || (cpfs.length === 1 && /status|situacao|como esta/.test(t))) {
+    if (!cpfs.length) return ['Me mande o CPF junto. Ex.: "status 123.456.789-09".'];
+    const cpf = cpfs[0];
+    const fi = s.fichas.filter((x) => x.cpf === cpf).sort((a, b) => b.id - a.id)[0];
+    const q = ultimaConsulta(s, cpf);
+    if (fi) return ['CPF ' + fmtCpf(cpf) + ': ficha #' + fi.id + ', situação "' + fi.status + '".'];
+    if (q) return ['CPF ' + fmtCpf(cpf) + ': ' + (q.status === 'pendente' ? 'consulta em andamento com o back office.' : 'consulta respondida: ' + RESULTADOS[q.resultado] + '.')];
+    return ['Não encontrei nada com o CPF ' + fmtCpf(cpf) + '. Quer consultar? Mande "consulta ' + fmtCpf(cpf) + '".'];
+  }
+
+  if (cpfs.length && (/consult|valid|ver cpf/.test(t) || norm(texto.replace(/[\d.\-\s]/g, '')) === '' || t === '1')) {
+    const ok = [], ruins = [];
+    for (const cpf of cpfs) (cpfValido(cpf) ? ok : ruins).push(cpf);
+    if (ruins.length) respostas.push('Esses CPFs não são válidos, confira os números: ' + ruins.map(fmtCpf).join(', ') + '.');
+    if (ok.length) {
+      ok.forEach((cpf) => novaConsulta(s, num, cpf, 'pedido'));
+      respostas.push('Recebido. ' + (ok.length > 1 ? 'As consultas dos CPFs ' : 'A consulta do CPF ') + ok.map(fmtCpf).join(', ') + (ok.length > 1 ? ' já estão' : ' já está') + ' com o back office. Te aviso por aqui assim que sair.');
+    }
+    return respostas;
+  }
+
+  if (/^(oi|ola|bom dia|boa tarde|boa noite|menu|inicio|ajuda)\b/.test(t) || t === '0') return [TXT.menu];
+  if (t === '1' || /^consult/.test(t)) return ['Me mande o CPF (ou vários, um por linha) para consultar.'];
+  if (t === '2' || /enviar ficha|mandar ficha/.test(t)) return ['Pode colar a ficha aqui de uma vez. Se precisar do modelo, mande "6".'];
+  if (t === '3') return ['Me mande "status" e o CPF. Ex.: "status 123.456.789-09".'];
+  if (t === '4' || /campanha/.test(t)) return [TXT.campanha];
+  if (t === '5' || /plano|pagamento|preco|valor/.test(t)) return [TXT.planos];
+  if (t === '6' || /modelo|ficha padrao/.test(t)) return [TXT.modelo];
+  if (t === '7' || /back ?office|atendente|pessoa|humano/.test(t)) {
+    c.humano = true;
+    c.humanoDesde = agora();
+    return [TXT.humano];
+  }
+  c.humano = true;
+  c.humanoDesde = agora();
+  return [TXT.naoEntendi];
+}
+
+
+// ---------- mesmas regras da API do Worker (/api/consulta, assumir, responder, encerrar) ----------
+function apiConsulta(s, b) {
+  const q = s.consultas.find((x) => x.id === b.id);
+  if (!q) return { erro: 'consulta não encontrada' };
+  if (q.status === 'respondida' && !b.corrigir) return { erro: 'já respondida por ' + q.atendente };
+  const corrigindo = q.status === 'respondida';
+  q.status = 'respondida'; q.resultado = b.resultado; q.obs = b.obs || ''; q.atendente = b.atendente || 'Back office'; q.respondidaEm = agora();
+  let msg = (corrigindo ? 'CORREÇÃO: ' : '') + 'CPF ' + fmtCpf(q.cpf) + ': ' + RESULTADOS[q.resultado] + '.' + (q.obs ? '\nObs.: ' + q.obs : '');
+  const fichas = s.fichas.filter((f) => f.consultaId === q.id || (f.cpf === q.cpf && f.status === 'aguardando consulta'));
+  if (q.resultado === 'total' || q.resultado === 'cartao') {
+    if (fichas.length) {
+      for (const f of fichas) {
+        if (q.resultado === 'cartao' && !/cart/i.test(f.dados.pagamento || '')) { f.status = 'ajustar pagamento'; msg += '\nA ficha #' + f.id + ' está com pagamento diferente de cartão. Ajuste para cartão e mande de novo.'; }
+        else { f.status = 'pronta para cadastro'; msg += '\nA ficha #' + f.id + ' seguiu para o cadastro.'; }
+      }
+    } else msg += q.resultado === 'cartao' ? '\nVenda só no cartão de crédito. Pode mandar a ficha.' : '\nPode mandar a ficha.';
+  } else fichas.forEach((f) => (f.status = 'recusada na consulta'));
+  conversa(s, q.de).msgs.push({ de: 'backoffice', texto: msg, t: agora(), n: q.atendente });
+  return { ok: true, msg };
+}
+function apiAssumir(s, b) {
+  const c = s.conversas[b.num];
+  if (!c) return { erro: 'conversa não encontrada' };
+  if (c.atendente && c.atendente !== b.atendente && !b.forcar) return { erro: 'em atendimento com ' + c.atendente };
+  c.atendente = b.atendente; c.humano = true;
+  return { ok: true };
+}
+function apiResponder(s, b) {
+  const c = s.conversas[b.num];
+  if (!c) return { erro: 'conversa não encontrada' };
+  if (c.atendente && c.atendente !== b.atendente) return { erro: 'em atendimento com ' + c.atendente };
+  c.msgs.push({ de: 'backoffice', texto: b.texto, t: agora(), n: b.atendente });
+  return { ok: true };
+}
+function apiEncerrar(s, b) {
+  const c = s.conversas[b.num];
+  if (c) { c.humano = false; c.atendente = null; log(c, 'sistema', 'Atendimento encerrado; o assistente volta a responder.'); }
+  return { ok: true };
+}
+function receber(s, num, nome, texto) {
+  const r = responderMensagem(null, s, num, nome, texto);
+  r.forEach((x) => log(conversa(s, num), 'bot', x));
+  return r;
+}
+return { receber, apiConsulta, apiAssumir, apiResponder, apiEncerrar, fmtCpf, RESULTADOS, setOff: (m) => { OFF = m * 60000; } };
+})();
+
+var WA_VEND=[['5521990001001','Bianca Rocha','Vendedora · Equipe Norte'],['5521990001002','Diego Alves','Supervisor · Equipe Norte'],['5521990001003','Marcos Vinícius','Vendedor · Equipe Sul']];
+var WA_FICHA=function(nome,cpf,pag){return 'FICHA PADRÃO\nVENDEDOR(a): Marcos Vinícius / Equipe Sul\nNOME: '+nome+'\nCPF: '+cpf+'\nRG: 12.345.678-9\nNOME DA MÃE: Maria Aparecida\nDATA DE NASCIMENTO: 12/03/1988\nE-MAIL: cliente@exemplo.com\nCONTATO: (21) 99999-0000\nRUA: Rua das Flores\nNÚMERO: 120\nCEP: 26000-000\nBAIRRO: Centro\nCIDADE: Nova Iguaçu\nPLANO: 600MB\nVALOR: 99,90\nVENCIMENTO: 10\nPAGAMENTO: '+pag+'\nOBS: '};
+function waSeed(){var s={seq:1,conversas:{},consultas:[],fichas:[]};var V=WA_VEND;
+  function at(min,f){WB.setOff(min);f();WB.setOff(0)}
+  at(52,function(){WB.receber(s,V[0][0],V[0][1],'oi')});
+  at(51,function(){WB.receber(s,V[0][0],V[0][1],'consulta 526.018.159-06')});
+  at(40,function(){WB.receber(s,V[1][0],V[1][1],'083.016.613-05\n186.091.390-34')});
+  at(35,function(){WB.apiConsulta(s,{id:1,resultado:'total',atendente:'Patrícia Lima'})});
+  at(30,function(){WB.apiConsulta(s,{id:2,resultado:'cartao',obs:'Cliente tem restrição no boleto.',atendente:'Juliene'})});
+  at(22,function(){WB.receber(s,V[0][0],V[0][1],WA_FICHA('Cliente Exemplo Um','526.018.159-06','Boleto').replace('Marcos Vinícius / Equipe Sul','Bianca Rocha / Equipe Norte'))});
+  at(14,function(){WB.receber(s,V[2][0],V[2][1],WA_FICHA('Cliente Exemplo Dois','996.030.824-30','Cartão de crédito'))});
+  at(9,function(){WB.receber(s,V[0][0],V[0][1],'consulta 628.194.821-12')});
+  at(4,function(){WB.receber(s,V[2][0],V[2][1],'O cliente quer instalar no sábado de manhã, consegue?')});
+  return s}
+function snapState(){return{sales:SALES,tts:TTS,adi:ADI,clients:CLIENTS,log:LOG,cfg:CFG,sellers:SELLERS,seq:[idSeq,osSeq,pedSeq,cliSeq],s:{imported:S.imported,approved:S.approved,approvedAt:S.approvedAt,snap:S.snap,manual:S.manual,notif:S.notif,fat:S.fat,rep:S.rep,payInst:S.payInst,instLock:S.instLock,gerImported:S.gerImported,contest:S.contest,contests:S.contests,wa:S.wa}}}
 function applyState(o){SALES=o.sales;TTS=o.tts;ADI=o.adi||[];CLIENTS=o.clients||[];LOG=o.log||[];CFG=o.cfg;if(o.sellers)SELLERS=o.sellers;idSeq=o.seq[0];osSeq=o.seq[1];pedSeq=o.seq[2];cliSeq=o.seq[3]||cliSeq;for(var k in o.s)S[k]=o.s[k];WEEKEND=SALES.filter(function(x){return x.wk});S.draft=null;if(S.cad&&!saleById(S.cad)){S.cad=null;S.v.bo='fila'}}
 var SY={doc:null,me:Math.random().toString(36).slice(2),last:null,init:null,t:null,busy:false,err:false};
 function schedulePush(){if(!SY.doc)return;clearTimeout(SY.t);SY.t=setTimeout(doPush,300)}
@@ -757,6 +1094,7 @@ function startSync(){if(!(window.claude&&window.claude.use))return;window.claude
     if(d.by!==SY.me&&S.user){var nw=LOG[0];if(nw&&(!top||nw.t+nw.txt!==top.t+top.txt))toast(nw.by+' '+nw.txt,'refresh');else if(LOG.length<n0)toast('A demonstração foi reiniciada.','refresh')}
   },function(){})}).catch(function(){})}
 function resetDemo(){applyState(JSON.parse(SY.init));SALES.forEach(function(s){if(s.bio&&s.bio.ago)s.bio.env=Date.now()-s.bio.ago*60000});S.cad=null;S.cf={};S.newId=null;render();schedulePush();toast('Demonstração reiniciada em todos os aparelhos.','refresh')}
+
 /* ===== cálculo ===== */
 function perfilDe(id,cfg){if(cfg&&cfg.sp)return cfg.sp[id];return seller(id).perfil}
 function valorItem(it,cfg){var base=valorTab(perfilDe(it.seller,cfg),it.vel,cfg);var extra=it.vel===CAMP.vel?CAMP.extra:0;return{base:base,extra:extra,total:base+extra}}
@@ -784,15 +1122,16 @@ var ROLES=[['vendedor','Vendedor'],['supervisor','Supervisor'],['bo','Back offic
 var NAVS={
  vendedor:[['inicio','Início','home'],['nova','Nova venda','plus'],['vendas','Minhas vendas','list'],['ganhos','Ganhos','wallet']],
  supervisor:[['equipe','Minha equipe','users'],['nova','Nova venda','plus'],['vendas','Minhas vendas','list'],['ganhos','Ganhos','wallet']],
- bo:[['fila','Fila de cadastro','inbox'],['analise','Cadastros em análise','shield'],['andamento','Em andamento','list'],['clientes','Clientes','users'],['importar','Importar relatório','upload'],['atividade','Histórico de ações','clock']],
+ bo:[['fila','Fila de cadastro','inbox'],['whats','WhatsApp dos vendedores','chat'],['analise','Cadastros em análise','shield'],['andamento','Em andamento','list'],['clientes','Clientes','users'],['importar','Importar relatório','upload'],['atividade','Histórico de ações','clock']],
  gf:[['instal','Pagar comissões','check'],['pagar','Pagar adiantamentos','wallet'],['hist','Pagamentos feitos','list']],
  fin:[['inicio','Início','home'],['analise','Cadastros em análise','shield'],['fechamento','Fechamento','check'],['vendedores','Vendedores','users'],['adiant','Adiantamentos','wallet'],['hist','Pagamentos feitos','list'],['perfis','Perfis de comissão','sliders'],['clientes','Clientes','users'],['repasse','Repasse','refresh'],['faturas','Faturas','file'],['atividade','Histórico de ações','clock']]
 };
-var MOBTABS={gf:[['instal','Comissões','check'],['pagar','Adiantamentos','wallet'],['hist','Já pagos','list']],bo:[['fila','Fila','inbox'],['analise','Análise','shield'],['andamento','Andamento','list'],['importar','Importar','upload'],['atividade','Histórico','clock']],fin:[['inicio','Início','home'],['aprovar','Aprovar','check'],['vendedores','Vendedores','users'],['mais','Mais','more']]};
+var MOBTABS={gf:[['instal','Comissões','check'],['pagar','Adiantamentos','wallet'],['hist','Já pagos','list']],bo:[['fila','Fila','inbox'],['whats','WhatsApp','chat'],['analise','Análise','shield'],['andamento','Andamento','list'],['importar','Importar','upload'],['atividade','Histórico','clock']],fin:[['inicio','Início','home'],['aprovar','Aprovar','check'],['vendedores','Vendedores','users'],['mais','Mais','more']]};
 var TITLES={cadastro:'Cadastro da venda',atividade:'Histórico de ações',aprovar:'Aprovar pagamento',mais:'Mais opções'};
 var USERS={vendedor:function(){return{n:seller(2).nome,s:'Vendedora · Equipe Norte',a:av(seller(2),36,1)}},supervisor:function(){return{n:seller(3).nome,s:'Supervisor · Equipe Norte',a:av(seller(3),36,1)}},bo:function(){var n=actor('bo');return{n:n,s:'Back office · loja',a:'<span class="av me">'+ini(n)+'</span>'}},fin:function(){return{n:'Diretor',s:'Diretor da empresa',a:'<span class="av me">DI</span>'}},gf:function(){return{n:'Gerente financeiro',s:'Paga adiantamentos e instalações',a:'<span class="av me">GF</span>'}}};
 function badge(role,v){
   if((role==='fin'||role==='bo')&&v==='analise'){var na=SALES.filter(function(s){return s.status==='analise'}).length;return na?'<span class="bd">'+na+'</span>':''}
+  if(role==='bo'&&v==='whats'){var nw=waPend().length+waEspera().length;return nw?'<span class="bd">'+nw+'</span>':''}
   if(role==='bo'&&v==='fila'){var n=SALES.filter(function(s){return s.status==='enviada'||s.status==='pronta'}).length;return n?'<span class="bd">'+n+'</span>':''}
   if(role==='vendedor'&&v==='vendas'&&S.notif)return '<span class="bd">'+S.notif+'</span>';
   if(role==='gf'&&v==='pagar'){var g=ADI.filter(function(a){return a.st==='aprovado'}).length;return g?'<span class="bd">'+g+'</span>':''}
@@ -865,7 +1204,7 @@ function doLogin(a){
   render();window.scrollTo(0,0);toast('Olá, '+a.n.split(' ')[0]+'. Você vê só o que o seu perfil permite.','shield');
 }
 function logout(){unlock();S.cad=null;if(S.v)S.v.bo='fila';S.user=null;S.live=false;S.desk=false;closeSheet();render();window.scrollTo(0,0)}
-var _afterRender=function(){try{checkAjuda()}catch(e){}};
+var _afterRender=function(){try{checkAjuda()}catch(e){}try{waScroll()}catch(e){}};
 function render(){setTimeout(_afterRender,0);
   applyTheme();SYNC=Date.now();setTimeout(countUp,0);schedulePush();
   if(!S.user){applyDesk();renderLogin();return}
@@ -917,6 +1256,64 @@ function view(ctx){
   return out;
 }
 var V={};
+/* ===== WhatsApp dos vendedores (back office) ===== */
+function waScroll(){[].forEach.call(document.querySelectorAll('.wa-th'),function(e){e.scrollTop=e.scrollHeight})}
+function waS(){return S.wa||(S.wa=waSeed())}
+function waPend(){return waS().consultas.filter(function(q){return q.status==='pendente'})}
+function waEspera(){var C=waS().conversas;return Object.keys(C).map(function(k){return C[k]}).filter(function(c){return c.humano&&!c.atendente})}
+function waNome(num){var c=waS().conversas[num];return c?c.nome:num}
+function waMin(iso){return Math.max(0,Math.round((Date.now()-Date.parse(iso))/60000))}
+function waHora(iso){var d=new Date(iso);return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2)}
+var WA_RES=[['total','Aprovado total','c-ok'],['cartao','Apenas cartão','c-warn'],['reprovado','Reprovado','c-bad'],['inviavel','Sem viabilidade','c-bad']];
+function waResChip(r){var x=WA_RES.filter(function(y){return y[0]===r})[0];return x?'<span class="chip '+x[2]+'">'+x[1]+'</span>':''}
+var WA_FST={'aguardando consulta':'c-warn','pronta para cadastro':'c-ok','ajustar pagamento':'c-bad','recusada na consulta':'c-bad'};
+function waBtns(q,fix){return '<div class="wa-res">'+WA_RES.map(function(x){return '<button class="btn" type="button" data-wres="'+q.id+'" data-r="'+x[0]+'"'+(fix?' data-fix="1"':'')+'>'+x[1]+'</button>'}).join('')+'</div><input class="inp wa-obs" id="waObs-'+q.id+'" placeholder="Observação para o vendedor (opcional)">'}
+function waConsCard(q,s){var fi=s.fichas.filter(function(f){return f.consultaId===q.id||(f.cpf===q.cpf&&f.status==='aguardando consulta')});var fix=S.waFix===q.id;
+  var h='<div class="card pad wa-card"><div class="row between" style="align-items:flex-start;gap:10px"><div class="stack" style="gap:2px;min-width:0"><b class="wa-cpf">CPF '+esc(WB.fmtCpf(q.cpf))+'</b><span class="mut">Pedida por '+esc(waNome(q.de))+' · '+(q.status==='pendente'?'há '+fmtMin(waMin(q.pedidaEm)):'às '+waHora(q.pedidaEm))+'</span></div><div class="row" style="gap:6px;flex-wrap:wrap;justify-content:flex-end">'+(fi.length?'<span class="chip c-info">Ficha esperando</span>':'')+(q.status==='respondida'?waResChip(q.resultado):'')+'</div></div>';
+  if(q.status==='pendente')h+=waBtns(q,false);
+  else{h+='<div class="row between" style="gap:8px;flex-wrap:wrap"><span class="mut">Respondida por '+esc(q.atendente)+' às '+waHora(q.respondidaEm)+(q.obs?' · '+esc(q.obs):'')+'</span>'+(fix?'':'<button class="btn" type="button" data-wfix="'+q.id+'">Corrigir</button>')+'</div>';if(fix)h+='<div class="mut" style="font-size:13px">Escolha o resultado certo. O vendedor recebe uma mensagem de correção.</div>'+waBtns(q,true)}
+  return h+'</div>'}
+function waBub(m,persp){var mine=persp==='vend'?m.de==='vendedor':m.de!=='vendedor';if(m.de==='sistema')return '<div class="bub sys">'+esc(m.texto)+'</div>';
+  var who=m.de==='bot'?'Assistente':m.de==='backoffice'?(m.n||'Back office'):'';return '<div class="bub '+(mine?'me':'')+(m.de==='backoffice'?' bo':'')+'">'+(who&&persp==='bo'?'<small>'+esc(who)+'</small>':'')+esc(m.texto).replace(/\n/g,'<br>')+'<i>'+waHora(m.t)+'</i></div>'}
+function waThread(c,persp,lim){var ms=lim?c.msgs.slice(-lim):c.msgs;return '<div class="wa-th'+(persp==='vend'?' vend':'')+'">'+ms.map(function(m){return waBub(m,persp)}).join('')+'</div>'}
+function waConvCard(c){var last=c.msgs[c.msgs.length-1]||{texto:'',t:new Date().toISOString()};var st=c.humano?(c.atendente?'<span class="chip c-info">Com '+esc(c.atendente)+'</span>':'<span class="chip c-warn">Esperando uma pessoa · '+fmtMin(waMin(last.t))+'</span>'):'<span class="chip c-mut">Com o assistente</span>';
+  return '<button class="card pad wa-card wa-conv" type="button" data-wconv="'+esc(c.num)+'"><div class="row between" style="gap:10px;width:100%"><b>'+esc(c.nome)+'</b>'+st+'</div><span class="mut wa-last">'+esc(last.texto.split('\n')[0])+'</span></button>'}
+function waFichaCard(f){return '<button class="card pad wa-card wa-conv" type="button" data-wficha="'+f.id+'"><div class="row between" style="gap:10px;width:100%"><b>#'+f.id+' · '+esc(f.dados.nome||'')+'</b><span class="chip '+(WA_FST[f.status]||'c-mut')+'">'+esc(f.status.charAt(0).toUpperCase()+f.status.slice(1))+'</span></div><span class="mut">CPF '+esc(WB.fmtCpf(f.cpf))+' · '+esc(f.dados.plano||'')+' · '+esc(f.dados.pagamento||'')+' · enviada por '+esc(waNome(f.de))+' às '+waHora(f.recebidaEm)+'</span></button>'}
+function waSim(){var s=waS(),i=S.waV||0,v=WA_VEND[i],c=s.conversas[v[0]];
+  var h='<div class="card pad wa-sim"><div class="stack" style="gap:2px"><b>Simular mensagem do vendedor</b><span class="mut" style="font-size:13px">Só para testar enquanto o número não sai. Usa a mesma lógica do bot real.</span></div>';
+  h+='<div class="seg" role="group" aria-label="Quem manda">'+WA_VEND.map(function(x,k){return '<button type="button" data-wsv="'+k+'" aria-pressed="'+(k===i)+'">'+esc(x[1].split(' ')[0])+'</button>'}).join('')+'</div>';
+  h+=c?waThread(c,'vend',8):'<div class="wa-th vend"><div class="bub sys">Nenhuma mensagem ainda.</div></div>';
+  h+='<div class="row" style="gap:6px;flex-wrap:wrap">'+[['oi','Oi'],['cons','Consultar CPF'],['ficha','Ficha completa'],['falta','Ficha incompleta'],['fora','Pergunta fora do menu']].map(function(x){return '<button class="btn sm" type="button" data-wq="'+x[0]+'">'+x[1]+'</button>'}).join('')+'</div>';
+  return h+'<div class="row" style="gap:6px"><textarea class="inp" id="waSimIn" rows="2" placeholder="Escreva como o vendedor"></textarea><button class="btn p" type="button" data-wsim="1">'+ic('send')+'Enviar</button></div></div>'}
+V.bo_whats=function(ctx){var s=waS(),tab=S.wt||'cons';var C=s.conversas;var convs=Object.keys(C).map(function(k){return C[k]});
+  var pend=waPend(),resp=s.consultas.filter(function(q){return q.status==='respondida'}).slice().reverse();
+  convs.sort(function(a,b){var pa=a.humano&&!a.atendente?0:a.humano?1:2,pb=b.humano&&!b.atendente?0:b.humano?1:2;if(pa!==pb)return pa-pb;var la=a.msgs[a.msgs.length-1],lb=b.msgs[b.msgs.length-1];return (lb?Date.parse(lb.t):0)-(la?Date.parse(la.t):0)});
+  var h=head('WhatsApp dos vendedores','O assistente responde o comum. Aqui o back office responde as consultas de CPF com um clique e atende o que o assistente não resolve.','',ctx);
+  var mm_=isM(ctx);var tabs=[['cons',mm_?'Consultas':'Consultas de CPF',pend.length],['conv','Conversas',waEspera().length],['fich',mm_?'Fichas':'Fichas recebidas',s.fichas.length]];
+  h+='<div class="seg" role="group" aria-label="Seção">'+tabs.map(function(x){return '<button type="button" data-wt="'+x[0]+'" aria-pressed="'+(tab===x[0])+'">'+x[1]+(x[2]?' <span class="cnt">'+x[2]+'</span>':'')+'</button>'}).join('')+'</div>';
+  var L='';
+  if(tab==='cons'){L+='<div class="sec-t">Aguardando resposta</div>'+(pend.length?pend.map(function(q){return waConsCard(q,s)}).join(''):'<div class="card pad mut">Nenhuma consulta esperando.</div>');
+    if(resp.length)L+='<div class="sec-t" style="margin-top:8px">Respondidas</div>'+resp.map(function(q){return waConsCard(q,s)}).join('')}
+  else if(tab==='conv')L+=convs.length?convs.map(waConvCard).join(''):'<div class="card pad mut">Nenhuma conversa ainda.</div>';
+  else{L+=alrt('info','info','Ficha pronta segue para o cadastro.','No próximo passo, a ficha pronta entra direto na Fila de cadastro, já preenchida.');L+=s.fichas.length?s.fichas.slice().reverse().map(waFichaCard).join(''):'<div class="card pad mut">Nenhuma ficha recebida.</div>'}
+  return h+'<div class="wa-grid"><div class="stack" style="gap:10px;min-width:0">'+L+'</div>'+waSim()+'</div>'};
+function waConvSheet(num){var s=waS(),c=s.conversas[num];if(!c)return;S.waOpen=num;var me=actor('bo');var mine=c.atendente===me,other=c.atendente&&!mine;
+  var h='<div class="row between" style="gap:10px"><div class="stack" style="gap:2px"><h2>'+esc(c.nome)+'</h2><span class="mut">WhatsApp '+esc(c.num)+'</span></div><button class="btn" type="button" data-close="1">Fechar</button></div>';
+  if(other)h+=alrt('warn','lock','Em atendimento com '+esc(c.atendente)+'.','Para não responder em dobro, só quem assumiu responde. Se precisar, assuma no lugar dela.');
+  else if(c.humano&&!c.atendente)h+=alrt('warn','alert','O assistente passou esta conversa para o back office.','Assuma para responder. O assistente fica calado até você devolver.');
+  else if(!c.humano)h+=alrt('info','info','O assistente está cuidando desta conversa.','Se quiser falar você mesma, assuma. O assistente fica calado enquanto isso.');
+  h+=waThread(c,'bo');
+  if(mine)h+='<div class="stack" style="gap:8px"><textarea class="inp" id="waRep" rows="3" placeholder="Responder como back office (sai pelo mesmo número)"></textarea><div class="row" style="justify-content:flex-end;gap:8px;flex-wrap:wrap"><button class="btn" type="button" data-wend="'+esc(num)+'">Devolver ao assistente</button><button class="btn p" type="button" data-wsend="'+esc(num)+'">'+ic('send')+'Responder</button></div></div>';
+  else h+='<div class="row" style="justify-content:flex-end"><button class="btn p" type="button" data-wassume="'+esc(num)+'"'+(other?' data-forcar="1"':'')+'>'+(other?'Assumir no lugar de '+esc(c.atendente):'Assumir a conversa')+'</button></div>';
+  sheet('<div class="stack" style="gap:12px">'+h+'</div>',true);waScroll()}
+function waFichaSheet(id){var f=waS().fichas.filter(function(x){return x.id===id})[0];if(!f)return;var D=f.dados;
+  var L=[['Vendedor(a)','vendedor'],['Supervisor','supervisor'],['Nome','nome'],['CPF','cpf'],['RG','rg'],['Nome da mãe','mae'],['Nascimento','nascimento'],['E-mail','email'],['Contato','contato'],['WhatsApp','whatsapp'],['Rua','rua'],['Número','numero'],['Complemento','complemento'],['CEP','cep'],['Bairro','bairro'],['Cidade','cidade'],['Referência','referencia'],['Plano','plano'],['Valor','valor'],['Vencimento','vencimento'],['Pagamento','pagamento'],['Banco','banco'],['Agência','agencia'],['Conta','conta'],['Obs.','obs']];
+  var h='<div class="row between" style="gap:10px"><div class="stack" style="gap:2px"><h2>Ficha #'+f.id+'</h2><span class="mut">Enviada por '+esc(waNome(f.de))+' às '+waHora(f.recebidaEm)+'</span></div><span class="chip '+(WA_FST[f.status]||'c-mut')+'">'+esc(f.status)+'</span></div>';
+  h+='<div class="ro">'+L.filter(function(x){return D[x[1]]}).map(function(x){return '<div><span>'+x[0]+'</span><b>'+esc(D[x[1]])+'</b></div>'}).join('')+'</div>';
+  sheet('<div class="stack" style="gap:12px">'+h+'<div class="row" style="justify-content:flex-end"><button class="btn" type="button" data-close="1">Fechar</button></div></div>',true)}
+function waAfter(msg,icn){render();schedulePush();if(S.waOpen&&document.querySelector('.scrim'))waConvSheet(S.waOpen);if(msg)toast(msg,icn)}
+var WA_Q={oi:function(){return 'oi'},cons:function(){return 'consulta 993.518.190-19'},ficha:function(){var v=WA_VEND[S.waV||0];return WA_FICHA('Cliente Exemplo Três','993.518.190-19','Boleto').replace('Marcos Vinícius / Equipe Sul',v[1])},falta:function(){return 'FICHA PADRÃO\nNOME: Cliente Exemplo Quatro\nCPF: 993.518.190-19\nPLANO: 500MB\nPAGAMENTO: Débito em conta'},fora:function(){return 'O cliente perguntou se dá para trocar o plano depois de instalado.'}};
+
 function head(t,sub,act,ctx){if(isM(ctx))return (sub?'<p class="mut">'+sub+'</p>':'')+(act?'<div class="row">'+act+'</div>':'');return '<div class="row between" style="align-items:flex-end"><div class="stack" style="gap:4px;min-width:0"><h1>'+t+'</h1>'+(sub?'<p class="mut">'+sub+'</p>':'')+'</div>'+(act?'<div class="row">'+act+'</div>':'')+'</div>'}
 function kpi(l,v,h,hl){return '<div class="card kpi'+(hl?' hl':'')+'"><span class="l">'+l+'</span><span class="v num">'+v+'</span><span class="h">'+h+'</span></div>'}
 function chipSt(s,k){var st=STATUS[s.status];if(s.status==='biometria'&&k){var b=bioOf(s);if(b.st==='fraude')return '<span class="chip c-warn">Análise de fraude</span>';if(b.st==='reprovada')return '<span class="chip c-bad">Selfie reprovada</span>';if(b.st==='enviado'){var mm=bioMin(b);return '<span class="chip '+(mm>=30?'c-bad':'c-warn')+'">Selfie · <span data-since="'+b.env+'">'+fmtMin(mm)+'</span></span>'}}return '<span class="chip '+st.c+'">'+(k?st.k:st.t)+'</span>'}
@@ -1656,6 +2053,16 @@ document.addEventListener('click',function(e){
   if(d.andcol){S.andC=d.andcol;render();window.scrollTo(0,0);return}
   if(d.andclear){S.andC='';S.andQ='';render();return}
   if(d.at){S.at=d.at;render();return}
+  if(d.wt){S.wt=d.wt;S.waFix=null;render();return}
+  if(d.wsv!==undefined){S.waV=+d.wsv;render();return}
+  if(d.wfix){S.waFix=+d.wfix;render();return}
+  if(d.wres){var wid=+d.wres,wo=document.getElementById('waObs-'+wid);var rr=WB.apiConsulta(waS(),{id:wid,resultado:d.r,obs:wo?wo.value.trim():'',atendente:actor('bo'),corrigir:!!d.fix});if(rr.erro){toast('Não foi: '+rr.erro+'.','alert');render();return}S.waFix=null;var wq=waS().consultas.filter(function(x){return x.id===wid})[0];logA('bo',(d.fix?'corrigiu':'respondeu')+' a consulta do CPF '+WB.fmtCpf(wq.cpf)+' pelo WhatsApp: '+WB.RESULTADOS[d.r].toLowerCase());waAfter('Resposta enviada para '+waNome(wq.de)+' no WhatsApp.','send');return}
+  if(d.wconv){waConvSheet(d.wconv);return}
+  if(d.wficha){waFichaSheet(+d.wficha);return}
+  if(d.wassume){var ra=WB.apiAssumir(waS(),{num:d.wassume,atendente:actor('bo'),forcar:!!d.forcar});if(ra.erro){toast('Não foi: '+ra.erro+'.','alert');return}logA('bo','assumiu a conversa de '+waNome(d.wassume)+' no WhatsApp');waAfter('Você assumiu a conversa. O assistente fica calado.','lock');return}
+  if(d.wsend){var tx=(document.getElementById('waRep')||{}).value||'';if(!tx.trim()){toast('Escreva a resposta.','alert');return}var rs_=WB.apiResponder(waS(),{num:d.wsend,texto:tx.trim(),atendente:actor('bo')});if(rs_.erro){toast('Não foi: '+rs_.erro+'.','alert');return}waAfter('Resposta enviada pelo WhatsApp.','send');return}
+  if(d.wend){WB.apiEncerrar(waS(),{num:d.wend});logA('bo','devolveu a conversa de '+waNome(d.wend)+' ao assistente');waAfter('Conversa devolvida ao assistente.','check');return}
+  if(d.wq||d.wsim){var v_=WA_VEND[S.waV||0];var tt=d.wq?WA_Q[d.wq]():((document.getElementById('waSimIn')||{}).value||'').trim();if(!tt)return;WB.receber(waS(),v_[0],v_[1],tt);waAfter();var si=document.getElementById('waSimIn');if(si&&d.wsim)si.focus();return}
   if(d.ht){S.ht=d.ht;render();return}
   if(d.liberar){var ls=saleById(+d.liberar);ls.bloqLib={by:actor('fin'),t:hora()};logA('fin','conferiu e liberou a OS '+ls.os+' (trava: '+ls.bloq.msg+')');render();toast('Trava liberada. A OS entrou no pagamento de hoje.');return}
   if(d.recusaopen){S.recusa=+d.recusaopen;S.motivo='';sheet(analiseHtml(saleById(+d.recusaopen),'fin'),true);return}
@@ -1709,7 +2116,7 @@ document.addEventListener('change',function(e){var t=e.target;if(t.id==='andV'){
   else if(d.sp)D.sp[d.sp]=t.value;render()});
 document.addEventListener('keydown',function(e){if(e.key==='Enter'&&!S.user&&(e.target.id==='lgUser'||e.target.id==='lgPass')){document.getElementById('loginBtn').click();return}if(e.key==='Escape')closeSheet();var tr=e.target.closest&&e.target.closest('tr.clk');if(tr&&(e.key==='Enter'||e.key===' ')){e.preventDefault();tr.click()}});
 var lastM=mobile(),lastW=window.innerWidth>=1100;window.addEventListener('resize',function(){var m=mobile(),w=window.innerWidth>=1100;if(m!==lastM||w!==lastW||S.desk){lastM=m;lastW=w;render()}});
-SY.init=JSON.stringify(snapState());SY.last=SY.init;
+S.wa=waSeed();SY.init=JSON.stringify(snapState());SY.last=SY.init;
 render();startSync();
 })();
 </script>
