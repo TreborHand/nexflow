@@ -643,6 +643,15 @@ textarea.inp{min-height:76px;resize:vertical}
 .at-empty-d .ico{width:48px;height:48px;border-radius:14px;background:var(--surface2);display:grid;place-items:center}
 .at-empty-d p{max-width:380px}
 .wa-who{flex-wrap:wrap}
+
+.at-team{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px}
+.at-resp{display:flex;flex-direction:column;gap:8px}
+.at-types button .i{width:13px;height:13px;vertical-align:-2px;margin-right:3px}
+
+.at-lim{margin-left:auto;display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+.at-lim button{background:none;border:none;color:var(--muted);font:inherit;font-size:11.5px;font-weight:700;padding:3px 9px;cursor:pointer;letter-spacing:0}
+.at-lim button[aria-pressed="true"]{background:var(--primary-soft);color:var(--ink)}
+.at-lim em{font-style:normal;font-size:11px;color:var(--muted);padding:3px 4px 3px 9px;text-transform:none;font-weight:600}
 </style>
 
 <div class="shell" id="shell">
@@ -1132,7 +1141,7 @@ function waSeed(){var s={seq:1,conversas:{},consultas:[],fichas:[],feitos:[]};va
   at(5,function(){r(1,'Esse cliente tem um vizinho interessado, posso mandar o endereço dele?')});
   var pq=s.consultas.filter(function(q){return q.status==='pendente'});if(pq[0]){pq[0].dono='Juliene';pq[0].donoEm=pq[0].pedidaEm}
   return s}
-function snapState(){return{sales:SALES,tts:TTS,adi:ADI,clients:CLIENTS,log:LOG,cfg:CFG,sellers:SELLERS,seq:[idSeq,osSeq,pedSeq,cliSeq],s:{imported:S.imported,approved:S.approved,approvedAt:S.approvedAt,snap:S.snap,manual:S.manual,notif:S.notif,fat:S.fat,rep:S.rep,payInst:S.payInst,instLock:S.instLock,gerImported:S.gerImported,contest:S.contest,contests:S.contests,wa:S.wa}}}
+function snapState(){return{sales:SALES,tts:TTS,adi:ADI,clients:CLIENTS,log:LOG,cfg:CFG,sellers:SELLERS,seq:[idSeq,osSeq,pedSeq,cliSeq],s:{imported:S.imported,approved:S.approved,approvedAt:S.approvedAt,snap:S.snap,manual:S.manual,notif:S.notif,fat:S.fat,rep:S.rep,payInst:S.payInst,instLock:S.instLock,gerImported:S.gerImported,contest:S.contest,contests:S.contests,wa:S.wa,atResp:S.atResp,atLim:S.atLim}}}
 function applyState(o){SALES=o.sales;TTS=o.tts;ADI=o.adi||[];CLIENTS=o.clients||[];LOG=o.log||[];CFG=o.cfg;if(o.sellers)SELLERS=o.sellers;idSeq=o.seq[0];osSeq=o.seq[1];pedSeq=o.seq[2];cliSeq=o.seq[3]||cliSeq;for(var k in o.s)S[k]=o.s[k];WEEKEND=SALES.filter(function(x){return x.wk});S.draft=null;if(S.cad&&!saleById(S.cad)){S.cad=null;S.v.bo='fila'}}
 var SY={doc:null,me:Math.random().toString(36).slice(2),last:null,init:null,t:null,busy:false,err:false};
 function schedulePush(){if(!SY.doc)return;clearTimeout(SY.t);SY.t=setTimeout(doPush,300)}
@@ -1307,7 +1316,7 @@ function view(ctx){
 }
 var V={};
 /* ===== Atendimentos pelo WhatsApp (back office) ===== */
-var AT_LIM=5;
+var AT_LIMS=[5,10,15];function atLim(){return (S.atLim||{})[actor('bo')]||5}
 var AT_T={consulta:['Consulta de CPF','Consultas'],ficha:['Ficha para cadastro','Fichas'],conversa:['Mensagem','Mensagens']};
 function waScroll(){[].forEach.call(document.querySelectorAll('.wa-th'),function(e){e.scrollTop=e.scrollHeight})}
 function waS(){var w=S.wa||(S.wa=waSeed());w.feitos=w.feitos||[];return w}
@@ -1328,25 +1337,30 @@ function atItems(){var s=waS(),out=[];
   Object.keys(s.conversas).forEach(function(n){var c=s.conversas[n];if(!c.humano)return;var lv=lastVB(c);var vez=!lv||lv.de==='vendedor';out.push({key:'v:'+n,k:'conversa',num:n,dono:c.atendente||null,desde:lv?lv.t:(c.humanoDesde||new Date().toISOString()),st:!c.atendente?'fila':vez?'vez':'aguarda',tit:lv?(lv.de==='vendedor'?'':'Back office: ')+lv.texto.split('\n')[0]:'',unread:!!(c.atendente&&vez&&lv&&(!c.visto||lv.t>c.visto))})});
   s.fichas.forEach(function(f){if(f.status!=='pronta para cadastro'||f.saleId)return;out.push({key:'f:'+f.id,k:'ficha',num:f.de,dono:f.dono||null,desde:f.recebidaEm,st:f.dono?'vez':'fila',tit:(f.dados.nome||'Cliente')+' · '+(f.dados.plano||'')})});
   return out}
-function atBadge(){var me=actor('bo');return atItems().filter(function(x){return x.st==='fila'||(x.dono===me&&x.st==='vez')}).length}
+function waEquipe(num){var v=waVend(num);return v?seller(v[3]).equipe:''}
+function atEquipes(){var o=[];SELLERS.forEach(function(x){if(o.indexOf(x.equipe)<0)o.push(x.equipe)});return o}
+function atMyTeams(){var m=(S.atResp||{})[actor('bo')];return m&&m.length?m:null}
+function atTeamOk(it){var t=atMyTeams();return S.atAll||!t||t.indexOf(waEquipe(it.num))>=0}
+function atBadge(){var me=actor('bo');return atItems().filter(function(x){return (x.st==='fila'&&atTeamOk(x))||(x.dono===me&&x.st==='vez')}).length}
 function atRow(it){var w=waMin(it.desde);var late=it.st==='aguarda'&&w>=30;
   return '<button class="at-row'+(S.atSel===it.key?' on':'')+'" type="button" data-atopen="'+esc(it.key)+'">'+waAv(it.num)+'<div class="tx"><b>'+esc(waNome(it.num))+'</b><span><em class="at-k k-'+it.k+'">'+AT_T[it.k][0]+'</em> '+esc(it.tit)+'</span></div><div class="rt">'+(late?'<span class="chip c-warn">sem resposta há '+fmtMin(w)+'</span>':'<span class="mut sm">'+fmtMin(w)+'</span>')+(it.unread?'<i class="dot" aria-label="Mensagem nova"></i>':'')+'</div></button>'}
 function atLeft(){var me=actor('bo'),all=atItems(),F=S.atF||'all';var fl=function(x){return F==='all'||x.k===F};
-  var fila=all.filter(function(x){return x.st==='fila'}).sort(function(a,b){return Date.parse(a.desde)-Date.parse(b.desde)});
+  var fila=all.filter(function(x){return x.st==='fila'&&atTeamOk(x)}).sort(function(a,b){return Date.parse(a.desde)-Date.parse(b.desde)});
   var mine=all.filter(function(x){return x.dono===me});var vez=mine.filter(function(x){return x.st==='vez'}),ag=mine.filter(function(x){return x.st==='aguarda'});
   var tipos=Object.keys(AT_T).filter(function(k){return all.some(function(x){return x.k===k})});
   var h='<div class="card pad at-fila"><div class="row between" style="gap:10px"><div class="stack" style="gap:0"><span class="mut sm">Esperando alguém pegar</span><b class="at-n">'+fila.filter(fl).length+'</b></div><button class="btn p" type="button" data-atnext="1">'+ic('send')+'Atender o próximo</button></div>';
   h+='<div class="at-types" role="group" aria-label="Filtrar por tipo">'+[['all','Todos']].concat(tipos.map(function(k){return [k,AT_T[k][1]]})).map(function(x){var n=x[0]==='all'?fila.length+mine.length:fila.concat(mine).filter(function(y){return y.k===x[0]}).length;return '<button type="button" data-atf="'+x[0]+'" aria-pressed="'+(F===x[0])+'">'+x[1]+' <span class="cnt">'+n+'</span></button>'}).join('')+'</div>';
+  var mt=atMyTeams();h+='<div class="at-team"><span class="mut sm">'+(mt?(S.atAll?'Mostrando todas as equipes':'Suas equipes: '+mt.map(function(e){return e.replace('Equipe ','')}).join(', ')):'Você atende todas as equipes')+'</span>'+(mt?'<button class="at-tog" type="button" data-atall="1">'+(S.atAll?'Só as minhas':'Ver todas as equipes')+'</button>':'')+'</div>';
   h+='<button class="at-tog" type="button" data-atfila="1">'+(S.atFila?'Esconder a fila':'Ver quem está na fila')+'</button>';
   if(S.atFila)h+='<div class="at-list">'+(fila.filter(fl).map(atRow).join('')||'<p class="mut sm">Fila vazia.</p>')+'</div>';
   h+='</div>';
   var vf=vez.filter(fl),af=ag.filter(fl);
-  h+='<div class="sec-t at-sec">Sua vez de responder <span class="cnt'+(vez.length>=AT_LIM?' full':'')+'">'+vez.length+' de '+AT_LIM+'</span></div><div class="at-list">'+(vf.map(atRow).join('')||'<p class="mut sm at-empty">Nada esperando você. Pegue o próximo da fila.</p>')+'</div>';
+  h+='<div class="sec-t at-sec">Sua vez de responder <span class="cnt'+(vez.length>=atLim()?' full':'')+'">'+vez.length+' de '+atLim()+'</span><span class="at-lim" role="group" aria-label="Quantos atendimentos você quer ao mesmo tempo"><em>limite</em>'+AT_LIMS.map(function(n){return '<button type="button" data-atlim="'+n+'" aria-pressed="'+(atLim()===n)+'">'+n+'</button>'}).join('')+'</span></div><div class="at-list">'+(vf.map(atRow).join('')||'<p class="mut sm at-empty">Nada esperando você. Pegue o próximo da fila.</p>')+'</div>';
   h+='<div class="sec-t at-sec">Aguardando o vendedor <span class="cnt">'+ag.length+'</span></div><div class="at-list">'+(af.map(atRow).join('')||'<p class="mut sm at-empty">Nenhum atendimento seu esperando resposta.</p>')+'</div>';
   h+='<button class="btn block at-done" type="button" data-atdone="1">'+ic('check')+'Concluídos hoje <span class="cnt">'+waS().feitos.length+'</span></button>';
   return h}
 function atDetail(key){var s=waS(),me=actor('bo');
-  if(!key)return '<div class="card pad at-empty-d"><div class="ico">'+ic('chat')+'</div><b>Escolha um atendimento</b><p class="mut">Você pode cuidar de até '+AT_LIM+' ao mesmo tempo. Quando um vendedor responde, o atendimento volta para "Sua vez" com uma bolinha verde e um aviso sonoro.</p><button class="btn p" type="button" data-atnext="1">'+ic('send')+'Atender o próximo</button></div>';
+  if(!key)return '<div class="card pad at-empty-d"><div class="ico">'+ic('chat')+'</div><b>Escolha um atendimento</b><p class="mut">Você pode cuidar de até '+atLim()+' ao mesmo tempo. Quando um vendedor responde, o atendimento volta para "Sua vez" com uma bolinha verde e um aviso sonoro.</p><button class="btn p" type="button" data-atnext="1">'+ic('send')+'Atender o próximo</button></div>';
   var t=key.charAt(0),id=key.slice(2),num,dono,tipo,act='';
   if(t==='c'){var q=s.consultas.filter(function(x){return x.id===+id})[0];if(!q)return atDetail(null);num=q.de;tipo='consulta';dono=q.status==='pendente'?(q.dono||null):null;
     var fe=s.fichas.some(function(f){return f.consultaId===q.id&&f.status==='aguardando consulta'});
@@ -1371,7 +1385,7 @@ function atDetail(key){var s=waS(),me=actor('bo');
   h+=tipo==='conversa'?th+'<div class="at-act">'+act+'</div>':'<div class="at-act">'+act+'</div>'+th;
   return '<div class="card pad at-d">'+h+'</div>'}
 V.bo_whats=function(ctx){
-  var h=head('Atendimentos','Tudo o que os vendedores mandam pelo WhatsApp e o assistente não resolve sozinho. Cada um pega o próximo da fila e cuida de vários ao mesmo tempo.','<button class="btn" type="button" data-atsim="1">'+ic('phone')+'Simular vendedor</button>',ctx);
+  var h=head('Atendimentos','Tudo o que os vendedores mandam pelo WhatsApp e o assistente não resolve sozinho. Cada um pega o próximo da fila e cuida de vários ao mesmo tempo.','<button class="btn" type="button" data-atresp="1">'+ic('users')+'Equipes por atendente</button><button class="btn" type="button" data-atsim="1">'+ic('phone')+'Simular vendedor</button>',ctx);
   if(isM(ctx))return h+'<div class="stack" style="gap:12px">'+atLeft()+'</div>';
   return h+'<div class="at-grid"><div class="stack" style="gap:12px;min-width:0">'+atLeft()+'</div><div class="at-right">'+atDetail(S.atSel)+'</div></div>'};
 function atAssume(key,force){var s=waS(),me=actor('bo'),t=key.charAt(0),id=key.slice(2),now=new Date().toISOString();
@@ -1385,13 +1399,19 @@ function atRelease(key){var s=waS(),t=key.charAt(0),id=key.slice(2);
   else if(t==='f'){var f=s.fichas.filter(function(x){return x.id===+id})[0];if(f)f.dono=null}}
 function atMyVez(){var me=actor('bo');return atItems().filter(function(x){return x.dono===me&&x.st==='vez'}).length}
 function atOpen(key,ctx){var me=actor('bo');var it=atItems().filter(function(x){return x.key===key})[0];
-  if(it&&it.st==='fila'){if(atMyVez()>=AT_LIM){toast('Você já tem '+AT_LIM+' atendimentos esperando sua resposta. Conclua um antes de pegar outro.','alert');return}atAssume(key);logA('bo','pegou um atendimento de '+waNome(it.num)+' ('+AT_T[it.k][0].toLowerCase()+')')}
+  if(it&&it.st==='fila'){if(atMyVez()>=atLim()){toast('Você já tem '+atLim()+' atendimentos esperando sua resposta. Conclua um antes de pegar outro.','alert');return}atAssume(key);logA('bo','pegou um atendimento de '+waNome(it.num)+' ('+AT_T[it.k][0].toLowerCase()+')')}
   if(key.charAt(0)==='v'){var c=waS().conversas[key.slice(2)];if(c&&c.atendente===me)c.visto=new Date().toISOString()}
   S.atSel=key;S.waFix=null;schedulePush();
   if(isM(ctx)){render();S.atSheet=true;sheet(atDetail(key),true);waScroll()}else{render();waScroll()}}
-function atNextKey(){var F=S.atF||'all';var f=atItems().filter(function(x){return x.st==='fila'&&(F==='all'||x.k===F)}).sort(function(a,b){return Date.parse(a.desde)-Date.parse(b.desde)});return f[0]?f[0].key:null}
+function atNextKey(){var F=S.atF||'all';var f=atItems().filter(function(x){return x.st==='fila'&&atTeamOk(x)&&(F==='all'||x.k===F)}).sort(function(a,b){return Date.parse(a.desde)-Date.parse(b.desde)});return f[0]?f[0].key:null}
 function atDoneList(){var q=norm(S.atQ||'');var l=waS().feitos.slice().reverse().filter(function(x){return !q||norm(x.txt+' '+x.por).indexOf(q)>=0});
   return '<div class="stack" style="gap:12px"><div class="row between"><h2>Concluídos hoje</h2><button class="btn" type="button" data-close="1">Fechar</button></div><input class="inp" id="atQ" placeholder="Buscar CPF, vendedor ou atendente" value="'+esc(S.atQ||'')+'"><div class="at-list">'+(l.map(function(x){return '<div class="at-row done"><div class="tx"><b>'+esc(x.txt)+'</b><span><em class="at-k k-'+x.k+'">'+AT_T[x.k][0]+'</em> '+esc(x.por)+' às '+waHora(x.t)+'</span></div>'+(x.k==='consulta'?'<button class="btn sm" type="button" data-atfix="'+x.ref+'">Corrigir</button>':'')+'</div>'}).join('')||'<p class="mut">Nada encontrado.</p>')+'</div></div>'}
+function atRespSheet(){var R=S.atResp||{};var eq=atEquipes();var pes=ACC.filter(function(a){return a.role==='bo'}).map(function(a){return a.n});
+  var h='<div class="stack" style="gap:12px"><div class="row between"><h2>Quem atende quais equipes</h2><button class="btn" type="button" data-close="1">Fechar</button></div><p class="mut sm">A fila de cada pessoa abre só com as equipes marcadas. Quem não tiver nenhuma marcada vê todas. Qualquer um pode clicar em "Ver todas as equipes" para cobrir um colega.</p>';
+  h+=pes.map(function(p){var m=R[p]||[];return '<div class="card pad at-resp"><b>'+esc(p)+'</b><div class="at-types">'+eq.map(function(e){var on=m.indexOf(e)>=0;return '<button type="button" data-atrt="'+esc(p+'|'+e)+'" aria-pressed="'+on+'">'+(on?ic('check'):'')+esc(e)+'</button>'}).join('')+'</div></div>'}).join('');
+  var sem=eq.filter(function(e){return !pes.some(function(p){return (R[p]||[]).indexOf(e)>=0})});
+  if(sem.length)h+=alrt('warn','alert','Sem ninguém: '+sem.join(', ')+'.','As mensagens dessas equipes só aparecem para quem estiver vendo todas as equipes.');
+  return h+'</div>'}
 function atDone(k,txt,ref){waS().feitos.push({t:new Date().toISOString(),k:k,txt:txt,por:actor('bo'),ref:ref})}
 function simSheet(){S.simOpen=true;sheet('<div class="stack" style="gap:12px"><div class="row between"><h2>Simular vendedor</h2><button class="btn" type="button" data-close="1">Fechar</button></div>'+waSim()+'</div>',true);waScroll()}
 function waSim(){var s=waS(),i=S.waV||0,v=WA_VEND[i],c=s.conversas[v[0]];
@@ -2155,10 +2175,14 @@ document.addEventListener('click',function(e){
   if(d.andclear){S.andC='';S.andQ='';render();return}
   if(d.at){S.at=d.at;render();return}
   if(d.atf){S.atF=d.atf;render();return}
+  if(d.atlim){var L_=S.atLim=S.atLim||{};L_[actor('bo')]=+d.atlim;render();schedulePush();toast('Agora você recebe até '+d.atlim+' atendimentos ao mesmo tempo.','check');return}
+  if(d.atall){S.atAll=!S.atAll;render();return}
+  if(d.atresp){S.simOpen=false;S.atSheet=false;sheet(atRespSheet(),true);return}
+  if(d.atrt){var pr=d.atrt.split('|');var R_=S.atResp=S.atResp||{};var l_=R_[pr[0]]=R_[pr[0]]||[];var ix=l_.indexOf(pr[1]);if(ix>=0)l_.splice(ix,1);else l_.push(pr[1]);logA('bo',(ix>=0?'tirou ':'colocou ')+pr[1]+(ix>=0?' de ':' para ')+pr[0]+' no atendimento do WhatsApp');render();sheet(atRespSheet(),true);schedulePush();return}
   if(d.atfila){S.atFila=!S.atFila;render();return}
   if(d.atopen){atOpen(d.atopen,ctx);return}
   if(d.atclose){S.atSel=null;S.atSheet=false;closeSheet();render();return}
-  if(d.atnext){var nk=atNextKey();if(!nk){toast('Ninguém esperando na fila agora.','check');return}if(atMyVez()>=AT_LIM){toast('Você já tem '+AT_LIM+' atendimentos esperando sua resposta. Conclua um antes de pegar outro.','alert');return}atOpen(nk,ctx);return}
+  if(d.atnext){var nk=atNextKey();if(!nk){toast('Ninguém esperando na fila agora.','check');return}if(atMyVez()>=atLim()){toast('Você já tem '+atLim()+' atendimentos esperando sua resposta. Conclua um antes de pegar outro.','alert');return}atOpen(nk,ctx);return}
   if(d.atassume){if(atAssume(d.atassume,true)){logA('bo','assumiu um atendimento de WhatsApp no lugar de outra pessoa');waAfter('Você assumiu. Ficou registrado no histórico.','lock')}return}
   if(d.atrel){atRelease(d.atrel);S.atSel=null;S.atSheet=false;closeSheet();waAfter('Devolvido à fila. Outra pessoa pode pegar.','refresh');return}
   if(d.atdone){S.simOpen=false;S.atSheet=false;sheet(atDoneList(),true);return}
@@ -2224,7 +2248,7 @@ document.addEventListener('change',function(e){var t=e.target;if(t.id==='andV'){
   else if(d.sp)D.sp[d.sp]=t.value;render()});
 document.addEventListener('keydown',function(e){if(e.key==='Enter'&&!S.user&&(e.target.id==='lgUser'||e.target.id==='lgPass')){document.getElementById('loginBtn').click();return}if(e.key==='Escape')closeSheet();var tr=e.target.closest&&e.target.closest('tr.clk');if(tr&&(e.key==='Enter'||e.key===' ')){e.preventDefault();tr.click()}});
 var lastM=mobile(),lastW=window.innerWidth>=1100;window.addEventListener('resize',function(){var m=mobile(),w=window.innerWidth>=1100;if(m!==lastM||w!==lastW||S.desk){lastM=m;lastW=w;render()}});
-S.wa=waSeed();SY.init=JSON.stringify(snapState());SY.last=SY.init;
+S.wa=waSeed();S.atResp=S.atResp||{'Juliene':['Equipe Norte','Equipe Centro'],'Patrícia Lima':['Equipe Sul','Equipe Centro']};SY.init=JSON.stringify(snapState());SY.last=SY.init;
 render();startSync();
 })();
 </script>
